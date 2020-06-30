@@ -1,0 +1,12 @@
+measure:
+  param-urls: 1
+  param-url-pattern: "/param/%s"
+  path-variable-urls: 1
+  path-variable-url-pattern: "/path/{path}/%s"
+  enable-optimize: false
+
+# $i: 从1开始的HandlerMethod编号
+# param request:GET /param/$i?param=_param_data_  response: _param_data_
+# path request:GET /path/_path_variable_/$i  response: _path_variable_
+server:
+  port: 7801
