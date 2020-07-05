@@ -14,7 +14,22 @@ import kotlin.streams.asSequence
 
 
 data class Type(val restful: Boolean, val optimize: Boolean, val count: Int)
-data class Series(val restful: Boolean, val optimize: Boolean)
+sealed class Series(val name: String) {
+    object RestSeries : Series("Rest")
+    object NonRestSeries : Series("Non Rest")
+    object RestOptSeries : Series("Rest Opt")
+    object NonRestOptSeries : Series("Non Rest Opt")
+
+    companion object {
+        fun of(restful: Boolean, optimize: Boolean): Series = when {
+            restful && !optimize -> RestSeries
+            !restful && !optimize -> NonRestSeries
+            restful && optimize -> RestOptSeries
+            !restful && optimize -> NonRestOptSeries
+            else -> throw RuntimeException("无法解析")
+        }
+    }
+}
 
 class BenchData(lineData: String) {
     lateinit var uri: String
@@ -51,13 +66,29 @@ class BenchData(lineData: String) {
 }
 
 const val headLine = "uri,concurrency,requests,qps,tpr,t_90"
-fun cleanData(data: Map<Type, List<BenchData>>): List<BenchData> {
-    return data.values.map { it[9] }
+
+fun cleanData(data: Map<Type, List<BenchData>>, k: Double, valueOp: (BenchData) -> Double): List<BenchData> {
+    // 四分位距法过滤
+    fun iqrFilter(list: List<BenchData>, k: Double, valueOp: (BenchData) -> Double): List<BenchData> {
+        val sorted = list.sortedBy(valueOp)
+        val q1 = sorted[(list.size + 1) / 4].let(valueOp)
+        val q3 = sorted[(list.size + 1) * 3 / 4].let(valueOp)
+        val minEst = q1 - k * (q3 - q1)
+        val maxEst = q3 + k * (q3 - q1)
+        return sorted.filter { valueOp(it) in minEst..maxEst }.also { println("过滤了${list.size - it.size}条数据") }
+    }
+
+    fun avg(list: List<BenchData>): BenchData = list.asSequence()
+            .reduce { acc, v -> acc.apply { qps += v.qps; tpr += v.tpr; t_90 += v.t_90 } }
+            .apply { qps /= list.size; tpr /= list.size; t_90 /= list.size }
+
+    return data.values.map { avg(iqrFilter(it, k, valueOp)) }
 }
 
 fun loadData(): Map<Series, List<BenchData>> {
     val groupData = Files.lines(Paths.get("bench.csv")).asSequence().filterNot { headLine == it }
             .map { BenchData(it) }.groupBy(BenchData::type)
-    val cleanData = cleanData(groupData)
-    return cleanData.asSequence().groupBy { Series(it.type.restful, it.type.optimize) }
+    // 对每一组按qps进行过滤，中度异常过滤
+    val cleanData = cleanData(groupData, 1.5, BenchData::qps)
+    return cleanData.asSequence().groupBy { Series.of(it.type.restful, it.type.optimize) }
 }
