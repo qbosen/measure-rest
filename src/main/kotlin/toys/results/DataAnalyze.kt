@@ -65,10 +65,8 @@ class BenchData(lineData: String) {
     }
 }
 
-const val headLine = "uri,concurrency,requests,qps,tpr,t_90"
-
 fun cleanData(data: Map<Type, List<BenchData>>, k: Double, valueOp: (BenchData) -> Double): List<BenchData> {
-    // 四分位距法过滤
+    // 四分位距法清洗
     fun iqrFilter(list: List<BenchData>, k: Double, valueOp: (BenchData) -> Double): List<BenchData> {
         val sorted = list.sortedBy(valueOp)
         val q1 = sorted[(list.size + 1) / 4].let(valueOp)
@@ -85,10 +83,10 @@ fun cleanData(data: Map<Type, List<BenchData>>, k: Double, valueOp: (BenchData) 
     return data.values.map { avg(iqrFilter(it, k, valueOp)) }
 }
 
-fun loadData(): Map<Series, List<BenchData>> {
-    val groupData = Files.lines(Paths.get("bench.csv")).asSequence().filterNot { headLine == it }
+fun loadData(file: String, headLines: Set<String>, k: Double, measureOp: (BenchData) -> Double): Map<Series, List<BenchData>> {
+    val groupData = Files.lines(Paths.get(file)).asSequence().filterNot { headLines.contains(it) }
             .map { BenchData(it) }.groupBy(BenchData::type)
     // 对每一组按qps进行过滤，中度异常过滤
-    val cleanData = cleanData(groupData, 1.5, BenchData::qps)
+    val cleanData = cleanData(groupData, k, measureOp)
     return cleanData.asSequence().groupBy { Series.of(it.type.restful, it.type.optimize) }
 }
